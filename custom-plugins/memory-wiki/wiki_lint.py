@@ -342,28 +342,33 @@ def build_lint_report_body(issues: list[LintIssue]) -> str:
     lines = [f"- Errors: {len(errors)}", f"- Warnings: {len(warnings)}"]
 
     if errors:
-        lines.append("", "### Errors")
+        lines.append("")
+        lines.append("### Errors")
         for issue in errors:
             lines.append(f"- `{issue.path}`: {issue.message}")
 
     if warnings:
-        lines.append("", "### Warnings")
+        lines.append("")
+        lines.append("### Warnings")
         for issue in warnings:
             lines.append(f"- `{issue.path}`: {issue.message}")
 
     if by_category.get("contradictions"):
-        lines.append("", "### Contradictions")
+        lines.append("")
+        lines.append("### Contradictions")
         for issue in by_category["contradictions"]:
             lines.append(f"- `{issue.path}`: {issue.message}")
 
     if by_category.get("open-questions"):
-        lines.append("", "### Open Questions")
+        lines.append("")
+        lines.append("### Open Questions")
         for issue in by_category["open-questions"]:
             lines.append(f"- `{issue.path}`: {issue.message}")
 
     quality_and_provenance = by_category.get("quality", []) + by_category.get("provenance", [])
     if quality_and_provenance:
-        lines.append("", "### Quality Follow-Up")
+        lines.append("")
+        lines.append("### Quality Follow-Up")
         for issue in quality_and_provenance:
             lines.append(f"- `{issue.path}`: {issue.message}")
 

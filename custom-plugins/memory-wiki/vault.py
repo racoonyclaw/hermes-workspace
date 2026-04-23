@@ -92,21 +92,41 @@ def get_vault_status(vault_path: Path) -> dict:
     if (vault_path / ".openclaw-wiki").is_dir():
         result["openclawMeta"] = True
 
-    # Count pages per kind
+    # Count pages per kind (exclude index.md files)
     for kind in ("entities", "concepts", "sources", "syntheses", "reports"):
         dir_path = vault_path / kind
         if dir_path.is_dir():
-            count = sum(1 for f in dir_path.glob("*.md") if f.is_file())
-            result["pageCounts"][kind] = count
+            count = sum(
+                1 for f in dir_path.glob("*.md")
+                if f.is_file() and f.name not in ("index.md",)
+            )
+            # Singularize kind key: "entities"→"entity", "syntheses"→"synthesis", etc.
+            if kind == "sources":
+                singular = "source"
+            elif kind == "syntheses":
+                singular = "synthesis"
+            elif kind.endswith("ies"):
+                singular = kind[:-3] + "y"  # entities → entity
+            elif kind.endswith("es"):
+                singular = kind[:-2]  # syntheses → synthesis
+            elif kind.endswith("s"):
+                singular = kind[:-1]  # reports → report
+            else:
+                singular = kind
+            result["pageCounts"][singular] = count
             result["pageCounts"]["total"] += count
 
-    # Find last modified page
+    # Find last modified page (exclude index.md files)
     try:
         mtimes: list[float] = []
         for kind in ("entities", "concepts", "sources", "syntheses", "reports"):
             dir_path = vault_path / kind
             if dir_path.is_dir():
-                mtimes.extend(f.stat().st_mtime for f in dir_path.glob("*.md") if f.is_file())
+                mtimes.extend(
+                    f.stat().st_mtime
+                    for f in dir_path.glob("*.md")
+                    if f.is_file() and f.name not in ("index.md",)
+                )
         if mtimes:
             import datetime
             result["lastModified"] = datetime.datetime.fromtimestamp(

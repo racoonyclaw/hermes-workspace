@@ -220,9 +220,11 @@ def extract_title_from_markdown(body: str) -> Optional[str]:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def normalize_string(value: Optional[str]) -> Optional[str]:
-    """Strip whitespace, return None if empty."""
+def normalize_string(value):
+    """Strip whitespace, return None if empty. Handles non-string types (YAML-parsed dates, etc.)."""
     if value is None:
+        return None
+    if not isinstance(value, str):
         return None
     stripped = value.strip()
     return stripped if stripped else None
