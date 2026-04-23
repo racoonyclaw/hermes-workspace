@@ -161,13 +161,9 @@ def _extract_sources(body: str) -> List[dict]:
     """Extract markdown links as sources."""
     sources: List[dict] = []
 
-    # Markdown links
+    # Markdown links [text](url) — group(1)=text, group(2)=url
     for match in MARKDOWN_LINK_PATTERN.finditer(body):
-        url = match.group(1)  # This is the URL for markdown links
-        text = match.group(0)
-
-    for match in MARKDOWN_LINK_PATTERN.finditer(body):
-        url = match.group(1)
+        url = match.group(2)  # URL is in group(2) for markdown links
         text = match.group(0)
 
         # Only external URLs
@@ -331,8 +327,10 @@ def ingest_file(
     # Generate ID
     id_val = _generate_id(title, kind, namespace)
 
-    # Determine output path
-    out_dir = vault_path / f"{kind}s"
+    # Determine output path — pluralize kind to get directory name
+    kind_plural = {"entity": "entities", "concept": "concepts",
+                   "source": "sources", "synthesis": "syntheses", "report": "reports"}.get(kind, f"{kind}s")
+    out_dir = vault_path / kind_plural
     out_path = out_dir / f"{slugify(title)}.md"
 
     # Check for existing file

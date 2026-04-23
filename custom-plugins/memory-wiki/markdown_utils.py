@@ -166,12 +166,13 @@ def extract_wikilinks(markdown: str) -> list[str]:
     # Obsidian wikilinks [[target]] or [[target|alias]]
     for match in _OBSIDIAN_LINK_PATTERN.finditer(searchable):
         target = match.group(1)
-        if target:
+        # Filter out heading anchors and URL schemes
+        if target and not target.startswith("#") and "://" not in target and not target.startswith("mailto:"):
             links.append(target.strip())
 
-    # Markdown links [text](target)
+    # Markdown links [text](url) — group(1)=text, group(2)=url
     for match in _MARKDOWN_LINK_PATTERN.finditer(searchable):
-        raw_target = match.group(1)
+        raw_target = match.group(2)  # URL is in group(2) for markdown links
         if not raw_target or raw_target.startswith("#") or re.match(r"^[a-z]+:", raw_target, re.I):
             continue
         # Strip heading anchors and query strings
