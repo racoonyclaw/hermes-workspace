@@ -270,6 +270,64 @@ WIKI_INGEST = {
 }
 
 
+WIKI_APPEND = {
+    "name": "wiki_append",
+    "description": (
+        "Append content to an existing wiki page. "
+        "Finds the page by ID, relative path, or basename. "
+        "If 'heading' is provided, inserts new content after that heading "
+        "(e.g. '## Spark Plugs'). If the heading already exists, content is "
+        "added below it (before the next heading). If no heading is provided, "
+        "content is appended to the end of the page. "
+        "Use after wiki modifications that add new sections to existing pages."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "lookup": {
+                "type": "string",
+                "description": (
+                    "Page lookup — can be a relative path (e.g. 'entities/civic.md'), "
+                    "a page id (e.g. 'entity.honda-civic-2016-ex-t-maintenance'), "
+                    "or a page basename (e.g. 'honda-civic-2016-ex-t-maintenance')."
+                ),
+            },
+            "content": {
+                "type": "string",
+                "description": (
+                    "The markdown content to append. Can include headings, lists, links, etc. "
+                    "No leading newline needed — one is added automatically."
+                ),
+            },
+            "heading": {
+                "type": "string",
+                "description": (
+                    "Optional heading to insert after (e.g. '## Spark Plugs'). "
+                    "If the heading exists, content goes after it. "
+                    "If it doesn't exist, content is appended at the end. "
+                    "Leading '## ' is optional (can pass 'Spark Plugs' directly)."
+                ),
+            },
+            "vault_path": {
+                "type": "string",
+                "description": (
+                    "Path to the wiki vault. Defaults to MEMORY_WIKI_PATH env var, "
+                    "or /media/racoony-wiki/ if not set."
+                ),
+            },
+            "dry_run": {
+                "type": "boolean",
+                "description": (
+                    "If true, shows what would be written without modifying any files. "
+                    "Use this to preview the change before applying it."
+                ),
+            },
+        },
+        "required": ["lookup", "content"],
+    },
+}
+
+
 WIKI_APPLY = {
     "name": "wiki_apply",
     "description": (

@@ -15,6 +15,7 @@ from . import ingest as _ingest
 from . import query as _query
 from . import vault as _vault
 from . import wiki_lint as _lint
+from . import append as _append
 
 
 def _vault_path(args: Dict[str, Any]) -> Path:
@@ -182,6 +183,53 @@ def handle_wiki_get(args: Dict[str, Any], **_: Any) -> str:
         lines.append("## Claims")
         for c in result["claims"]:
             lines.append(f"- [{c['status']}] {c['text']} (confidence: {c['confidence']})")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# wiki_append
+# ---------------------------------------------------------------------------
+
+def handle_wiki_append(args: Dict[str, Any], **_: Any) -> str:
+    """Append content to an existing wiki page."""
+    from pathlib import Path
+
+    vault_path = _vault_path(args)
+    lookup = args.get("lookup", "").strip()
+    content = args.get("content", "")
+    heading = args.get("heading")
+    dry_run = bool(args.get("dry_run", False))
+
+    if not lookup:
+        return json.dumps({"error": "lookup is required"})
+
+    if not content:
+        return json.dumps({"error": "content is required"})
+
+    # Normalize heading: strip leading ## if present
+    if heading:
+        heading = heading.strip()
+        if heading.startswith("## "):
+            heading = heading[3:]
+        elif heading.startswith("##"):
+            heading = heading.lstrip("#").strip()
+
+    result = _append.append_to_page(
+        vault_path=vault_path,
+        lookup=lookup,
+        content=content,
+        heading=heading,
+        dry_run=dry_run,
+    )
+
+    if not result.success:
+        return json.dumps({"error": result.error})
+
+    mode_str = "Would write" if (dry_run or result.would_write) else "Wrote"
+    lines = [f"{mode_str}: {result.path}"]
+    if result.preview:
+        lines.append(f"\nPreview (last 500 chars):\n{result.preview}")
 
     return "\n".join(lines)
 
