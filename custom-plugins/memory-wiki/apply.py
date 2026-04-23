@@ -297,49 +297,124 @@ def _fix_missing_title(page, fm: dict, body: str) -> Optional[str]:
     return None
 
 
-def _fix_broken_wikilink(vault_path: Path, page, body: str) -> tuple[str, int]:
-    """Attempt to fix broken wikilinks in body.
+def _fuzzy_page_match(link: str, pages: list) -> Optional[Any]:
+    """Find the best matching page for a broken wikilink.
 
-    Tries to resolve ambiguous links by matching similar filenames/ids.
+    Tries matching strategies in order:
+      1. Exact id match (case-insensitive)
+      2. Exact basename match (case-insensitive)
+      3. Slug match on page title
+      4. Substring match on page title (link is substring of title or vice versa)
+      5. Best "similarity" by shared word count
+    Returns the matching page or None.
+    """
+    if not pages:
+        return None
+
+    link_clean = link.replace(".md", "").strip()
+    link_slug = slugify(link_clean)
+    link_lower = link_clean.lower()
+
+    candidates: list = []
+
+    for p in pages:
+        score = 0
+        matched_on = []
+
+        # 1. Exact id match
+        if p.id and p.id.lower() == link_lower:
+            return p
+
+        # 2. Exact basename match
+        p_basename = Path(p.relative_path).stem
+        if p_basename.lower() == link_lower:
+            return p
+
+        # 3. Slug match
+        p_title_slug = slugify(p.title)
+        if p_title_slug and p_title_slug == link_slug:
+            return p
+
+        # 4. Substring match
+        p_title_lower = p.title.lower()
+        if link_lower in p_title_lower:
+            score = 10
+            matched_on.append("title-contains-link")
+        elif p_title_lower in link_lower:
+            score = 8
+            matched_on.append("link-contains-title")
+
+        # 5. Shared word count
+        link_words = set(link_slug.split("-"))
+        p_words = set(p_title_slug.split("-"))
+        shared = link_words & p_words
+        if shared and len(shared) >= min(len(link_words), len(p_words)) * 0.5:
+            score = max(score, 5 + len(shared) * 2)
+            matched_on.append(f"shared-words:{shared}")
+
+        if score > 0:
+            candidates.append((score, p, matched_on))
+
+    if not candidates:
+        return None
+
+    # Sort by score descending, pick best
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return candidates[0][1]
+
+
+_WIKILINK_PATTERN = re.compile(
+    r"\[\[([^\]|]+?)(?:\|([^\]]+))?\]\]",
+    re.DOTALL,
+)
+
+
+def _fix_broken_wikilinks_in_body(
+    vault_path: Path,
+    pages: list,
+    body: str,
+) -> tuple[str, int]:
+    """Find and fix all broken wikilinks in body text.
+
     Returns (fixed_body, fix_count).
     """
-    pages = read_wiki_pages(vault_path)
-    pages_by_id: Dict[str, Any] = {p.id: p for p in pages if p.id}
-    pages_by_slug: Dict[str, Any] = {slugify(p.title): p for p in pages}
-
     links = extract_wikilinks(body)
     fixed_body = body
     fix_count = 0
 
     for link in links:
-        # Try to find a match
-        target = None
+        link_clean = link.replace(".md", "").strip()
 
-        # Exact match in ids
-        if link in pages_by_id:
-            target = pages_by_id[link]
-        # Slug match
-        elif slugify(link) in pages_by_slug:
-            target = pages_by_slug[slugify(link)]
+        # Check if this link target actually exists on disk
+        target_path = vault_path / link_clean
+        target_path_md = vault_path / f"{link_clean}.md"
+        if target_path.exists() or target_path_md.exists():
+            continue  # Link is valid — skip
 
-        if target:
-            # Check if the link in the body actually points nowhere
-            old_link_pattern = re.compile(
-                r"\[\[([^|\]]+?)(\|[^\]]+)?\]\]",
-                re.DOTALL,
-            )
-            for m in old_link_pattern.finditer(fixed_body):
-                if m.group(1).strip() == link:
-                    # Check if this is actually a broken link
-                    target_path = vault_path / link.replace("/", "/")
-                    target_path_md = vault_path / f"{link}.md"
-                    if not target_path.exists() and not target_path_md.exists():
-                        # Replace with correct target
-                        new_link = f"[[{target.relative_path.replace('.md', '')}]]"
-                        if m.group(2):
-                            new_link = f"[[{target.relative_path.replace('.md', '')}|{m.group(2)[1:]}]]"
-                        fixed_body = fixed_body[:m.start()] + new_link + fixed_body[m.end():]
-                        fix_count += 1
+        # Link is broken — try to find the correct target page
+        target_page = _fuzzy_page_match(link_clean, pages)
+        if target_page is None:
+            continue  # Can't find a replacement — leave it broken
+
+        # Find all [[link]] or [[link|display]] occurrences in the body
+        for m in _WIKILINK_PATTERN.finditer(fixed_body):
+            wikilink_text = m.group(1).replace(".md", "").strip()
+            if wikilink_text != link_clean:
+                continue  # Not this occurrence
+
+            # Build replacement
+            display_text = m.group(2)
+            replacement_slug = target_page.relative_path.replace(".md", "")
+
+            if display_text:
+                new_wikilink = f"[[{replacement_slug}|{display_text}]]"
+            else:
+                new_wikilink = f"[[{replacement_slug}]]"
+
+            # Replace at match position
+            fixed_body = fixed_body[:m.start()] + new_wikilink + fixed_body[m.end():]
+            fix_count += 1
+            break  # Only fix the first occurrence per link target
 
     return fixed_body, fix_count
 
@@ -370,6 +445,9 @@ def apply_lint_fix(
     issues_by_path: Dict[str, List[LintIssue]] = {}
     for issue in issues:
         issues_by_path.setdefault(issue.path, []).append(issue)
+
+    # Pre-load pages once for wikilink fixes
+    wikilink_pages: Optional[list] = None
 
     for path, path_issues in issues_by_path.items():
         file_path = vault_path / path
@@ -409,6 +487,16 @@ def apply_lint_fix(
                 fixed_title = _fix_missing_title(page_like, fm, body)
                 if fixed_title:
                     fixes_applied.append(f"added title: {fixed_title}")
+
+            elif issue.code == "broken-wikilink":
+                if wikilink_pages is None:
+                    wikilink_pages = read_wiki_pages(vault_path)
+                fixed_body, link_fixes = _fix_broken_wikilinks_in_body(
+                    vault_path, wikilink_pages, body,
+                )
+                if link_fixes > 0:
+                    body = fixed_body
+                    fixes_applied.append(f"fixed {link_fixes} wikilink(s)")
 
         if fixes_applied:
             if dry_run:
