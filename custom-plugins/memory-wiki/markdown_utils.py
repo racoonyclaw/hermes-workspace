@@ -30,6 +30,10 @@ LINT_END = "<!-- openclaw:wiki:lint:end -->"
 _FRONTMATTER_PATTERN = re.compile(r"^---\n([\s\S]*?)\n---\n?")
 _OBSIDIAN_LINK_PATTERN = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 _MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+
+# Public aliases for external consumers (e.g. ingest.py)
+OBSIDIAN_LINK_PATTERN = _OBSIDIAN_LINK_PATTERN
+MARKDOWN_LINK_PATTERN = _MARKDOWN_LINK_PATTERN
 _RELATED_BLOCK_PATTERN = re.compile(
     r"<!-- openclaw:wiki:related:start -->[\s\S]*?<!-- openclaw:wiki:related:end -->",
     re.DOTALL,
@@ -71,7 +75,7 @@ def render_frontmatter(frontmatter: dict, body: str) -> str:
     import yaml
 
     fm = yaml.safe_dump(frontmatter, default_flow_style=False, sort_keys=False)
-    return f"---\n{fm.rstrip()}\n---\n\n{body.stripStart()}"
+    return f"---\n{fm.rstrip()}\n---\n\n{body.lstrip()}"
 
 
 # ---------------------------------------------------------------------------
