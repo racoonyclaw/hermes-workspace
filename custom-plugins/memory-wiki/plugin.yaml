@@ -1,10 +1,14 @@
 name: memory-wiki
-version: 1.0.0
-description: "Memory Wiki plugin for Hermes — lint, search, and manage an Obsidian-compatible wiki vault. Reads vault path from MEMORY_WIKI_PATH env var (default: /media/racoony-wiki/)."
+version: 1.1.0
+description: "Memory Wiki plugin for Hermes — lint, search, ingest, compile, and manage an Obsidian-compatible wiki vault. Reads vault path from MEMORY_WIKI_PATH env var (default: /media/racoony-wiki/)."
 author: "Racoony"
 provides_tools:
   - wiki_lint
   - wiki_status
   - wiki_search
   - wiki_get
+  - wiki_compile
+  - wiki_doctor
+  - wiki_ingest
+  - wiki_apply
 provides_hooks: []

@@ -9,6 +9,9 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from . import compile as _compile
+from . import doctor as _doctor
+from . import ingest as _ingest
 from . import query as _query
 from . import vault as _vault
 from . import wiki_lint as _lint
@@ -31,7 +34,6 @@ def handle_wiki_lint(args: Dict[str, Any], **_: Any) -> str:
     if args.get("json_output"):
         return json.dumps(result, indent=2)
 
-    # Human-readable summary
     summary = (
         f"Linted vault at {result['vaultRoot']}: "
         f"{result['issueCount']} issue{'s' if result['issueCount'] != 1 else ''}, "
@@ -180,5 +182,241 @@ def handle_wiki_get(args: Dict[str, Any], **_: Any) -> str:
         lines.append("## Claims")
         for c in result["claims"]:
             lines.append(f"- [{c['status']}] {c['text']} (confidence: {c['confidence']})")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# wiki_compile
+# ---------------------------------------------------------------------------
+
+def handle_wiki_compile(args: Dict[str, Any], **_: Any) -> str:
+    """Compile synthesis pages from source pages."""
+    vault_path = _vault_path(args)
+    dry_run = bool(args.get("dry_run"))
+    target_id = args.get("target_id")
+
+    results = _compile.compile_all(
+        vault_path,
+        dry_run=dry_run,
+    )
+
+    # Filter by target_id if specified
+    if target_id:
+        results = [r for r in results if r.synthesis_id == target_id]
+
+    if args.get("json_output"):
+        return json.dumps({
+            "dryRun": dry_run,
+            "targetId": target_id,
+            "results": [
+                {
+                    "synthesisPath": r.synthesis_path,
+                    "synthesisId": r.synthesis_id,
+                    "title": r.title,
+                    "claimsIncluded": r.claims_included,
+                    "sourcesAggregated": r.sources_aggregated,
+                    "written": r.written,
+                    "error": r.error,
+                }
+                for r in results
+            ],
+        }, indent=2)
+
+    if not results:
+        return "No synthesis targets found."
+
+    written = [r for r in results if r.written]
+    errors = [r for r in results if r.error]
+
+    mode_str = "Would compile" if dry_run else "Compiled"
+    lines = [f"{mode_str} {len(written)} synthesis page{'s' if len(written) != 1 else ''}:"]
+
+    for r in results:
+        status = "✓" if r.written else ("would" if dry_run else "✗")
+        err_str = f" (error: {r.error})" if r.error else ""
+        lines.append(f"  {status} {r.title} — {r.claims_included} claims, {r.sources_aggregated} sources{err_str}")
+
+    if errors:
+        lines.append(f"\nErrors ({len(errors)}):")
+        for r in errors:
+            lines.append(f"  {r.synthesis_id}: {r.error}")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# wiki_doctor
+# ---------------------------------------------------------------------------
+
+def handle_wiki_doctor(args: Dict[str, Any], **_: Any) -> str:
+    """Run vault health checks."""
+    vault_path = _vault_path(args)
+
+    result = _doctor.run_doctor(vault_path)
+
+    if args.get("json_output"):
+        return json.dumps(result, indent=2)
+
+    lines = [
+        f"Vault: {result['vaultRoot']}",
+        f"Healthy: {result['healthy']}",
+        f"Issues: {result['issueCount']} (errors: {result['errorCount']}, warnings: {result['warningCount']}, info: {result['infoCount']})",
+    ]
+
+    if result["issues"]:
+        lines.append("\nChecks run: " + ", ".join(result["checks"]))
+        lines.append("\nIssues:")
+        for issue in result["issues"][:30]:
+            lines.append(f"  [{issue['severity']}] {issue['code']} ({issue['category']}): {issue['path']} — {issue['message']}")
+        if len(result["issues"]) > 30:
+            lines.append(f"  ... and {len(result['issues']) - 30} more issues")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# wiki_ingest
+# ---------------------------------------------------------------------------
+
+def handle_wiki_ingest(args: Dict[str, Any], **_: Any) -> str:
+    """Ingest markdown files into the wiki vault."""
+    vault_path = _vault_path(args)
+    file_path = args.get("file_path", "").strip()
+
+    if not file_path:
+        return json.dumps({"error": "No file_path provided"})
+
+    kind = args.get("kind", "auto")
+    recursive = bool(args.get("recursive", True))
+    force = bool(args.get("force", False))
+    namespace = args.get("namespace")
+
+    src = Path(file_path)
+
+    if src.is_dir():
+        results = _ingest.ingest_directory(
+            src,
+            vault_path,
+            kind=kind,
+            recursive=recursive,
+            force=force,
+            namespace=namespace,
+        )
+    else:
+        result = _ingest.ingest_file(
+            file_path,
+            vault_path,
+            kind=kind,
+            force=force,
+            namespace=namespace,
+        )
+        results = [result]
+
+    if args.get("json_output"):
+        return json.dumps({
+            "filePath": file_path,
+            "vaultPath": str(vault_path),
+            "results": [
+                {
+                    "originalPath": r.original_path,
+                    "wikiPath": r.wiki_path,
+                    "title": r.title,
+                    "id": r.id,
+                    "kind": r.kind,
+                    "claimsExtracted": r.claims_extracted,
+                    "sourcesExtracted": r.sources_extracted,
+                    "warnings": r.warnings,
+                    "error": r.error,
+                }
+                for r in results
+            ],
+        }, indent=2)
+
+    succeeded = [r for r in results if r.error is None]
+    failed = [r for r in results if r.error is not None]
+
+    lines = [f"Ingested {len(succeeded)} file{'s' if len(succeeded) != 1 else ''}:"]
+    for r in succeeded:
+        lines.append(f"  ✓ {r.title} → {r.wiki_path} ({r.kind}, {r.claims_extracted} claims)")
+
+    if failed:
+        lines.append(f"\nFailed ({len(failed)}):")
+        for r in failed:
+            lines.append(f"  ✗ {r.original_path}: {r.error}")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# wiki_apply
+# ---------------------------------------------------------------------------
+
+def handle_wiki_apply(args: Dict[str, Any], **_: Any) -> str:
+    """Apply mutations to the wiki vault."""
+    from . import apply as _apply
+
+    vault_path = _vault_path(args)
+    mode = args.get("mode", "")
+
+    if not mode:
+        return json.dumps({"error": "mode is required (synthesis, metadata, lint-fix)"})
+
+    dry_run = bool(args.get("dry_run", False))
+
+    if mode == "synthesis":
+        result = _apply.apply_synthesis(
+            vault_path,
+            dry_run=dry_run,
+            target_id=args.get("target_id"),
+        )
+    elif mode == "metadata":
+        updates = args.get("updates", {})
+        if not updates:
+            return json.dumps({"error": "updates dict is required for metadata mode"})
+        result = _apply.apply_metadata(
+            vault_path,
+            updates=updates,
+            dry_run=dry_run,
+            filter_kinds=args.get("filter_kinds"),
+            filter_query=args.get("filter_query"),
+        )
+    elif mode == "lint-fix":
+        result = _apply.apply_lint_fix(
+            vault_path,
+            dry_run=dry_run,
+            categories=args.get("categories"),
+        )
+    else:
+        return json.dumps({"error": f"Unknown mode: {mode}. Must be one of: synthesis, metadata, lint-fix"})
+
+    if args.get("json_output"):
+        return json.dumps({
+            "mode": result.mode,
+            "changed": result.changed,
+            "errors": result.errors,
+            "details": result.details,
+        }, indent=2)
+
+    mode_str = "Would apply" if dry_run else "Applied"
+    lines = [
+        f"{mode_str} {mode} — {result.changed} changed, {result.errors} errors",
+    ]
+
+    for d in result.details[:20]:
+        action = d.get("action", "")
+        if action in ("compiled", "would-compile"):
+            lines.append(f"  • {d['title']} — {d.get('claims', '?')} claims, {d.get('sources', '?')} sources")
+        elif action == "updated":
+            lines.append(f"  • Updated: {d['path']}")
+        elif action == "fixed":
+            lines.append(f"  • Fixed: {d['path']} — {', '.join(d.get('fixes', []))}")
+        elif action in ("error", "update-error"):
+            lines.append(f"  ✗ {d.get('path', '?')}: {d.get('error', 'unknown error')}")
+        elif action == "no-targets":
+            lines.append(f"  — {d.get('message', 'No targets found')}")
+
+    if len(result.details) > 20:
+        lines.append(f"  ... and {len(result.details) - 20} more changes")
 
     return "\n".join(lines)

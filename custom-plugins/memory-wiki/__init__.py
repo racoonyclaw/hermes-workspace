@@ -1,10 +1,14 @@
-"""memory-wiki — Hermes plugin for wiki vault lint, search, and management.
+"""memory-wiki — Hermes plugin for wiki vault lint, search, ingest, compile, and management.
 
 Register tools:
   - wiki_lint    Run lint checks and write report to reports/lint.md
   - wiki_status  Get vault health summary
   - wiki_search  Search pages by query string
   - wiki_get     Read a specific page by path/id/basename
+  - wiki_compile Compile synthesis pages from entity/concept sources
+  - wiki_doctor  Run vault health checks
+  - wiki_ingest  Ingest raw markdown files into wiki format
+  - wiki_apply   Apply mutations (synthesis, metadata, lint-fix)
 
 Vault path is read from MEMORY_WIKI_PATH in ~/.hermes/.env,
 falling back to /media/racoony-wiki/.
@@ -41,3 +45,7 @@ def register(ctx) -> None:
     ctx.register_tool("wiki_status", _schemas.WIKI_STATUS, _tools.handle_wiki_status)
     ctx.register_tool("wiki_search", _schemas.WIKI_SEARCH, _tools.handle_wiki_search)
     ctx.register_tool("wiki_get", _schemas.WIKI_GET, _tools.handle_wiki_get)
+    ctx.register_tool("wiki_compile", _schemas.WIKI_COMPILE, _tools.handle_wiki_compile)
+    ctx.register_tool("wiki_doctor", _schemas.WIKI_DOCTOR, _tools.handle_wiki_doctor)
+    ctx.register_tool("wiki_ingest", _schemas.WIKI_INGEST, _tools.handle_wiki_ingest)
+    ctx.register_tool("wiki_apply", _schemas.WIKI_APPLY, _tools.handle_wiki_apply)

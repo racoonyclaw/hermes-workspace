@@ -128,3 +128,229 @@ WIKI_GET = {
         "required": ["lookup"],
     },
 }
+
+
+WIKI_COMPILE = {
+    "name": "wiki_compile",
+    "description": (
+        "Compile synthesis pages by aggregating claims from entity and concept pages. "
+        "Reads all entity/concept source pages, deduplicates claims, resolves contradictions, "
+        "and writes updated synthesis documents. "
+        "Use after significant changes to entity or concept pages, "
+        "or to regenerate synthesis pages from claim clusters. "
+        "Run with dry_run=true first to see what would be compiled."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "vault_path": {
+                "type": "string",
+                "description": (
+                    "Path to the wiki vault. Defaults to MEMORY_WIKI_PATH env var, "
+                    "or /media/racoony-wiki/ if not set."
+                ),
+            },
+            "dry_run": {
+                "type": "boolean",
+                "description": (
+                    "If true, shows what would be compiled without writing any files. "
+                    "Use this to preview changes before applying them."
+                ),
+            },
+            "target_id": {
+                "type": "string",
+                "description": (
+                    "Optional synthesis ID to compile. If not provided, "
+                    "compiles all synthesis targets discovered in the vault."
+                ),
+            },
+            "json_output": {
+                "type": "boolean",
+                "description": "Return machine-readable JSON instead of a human-readable summary.",
+            },
+        },
+    },
+}
+
+
+WIKI_DOCTOR = {
+    "name": "wiki_doctor",
+    "description": (
+        "Run comprehensive health checks on the wiki vault: directory structure, "
+        "file permissions, broken wikilinks, index consistency, orphan pages, "
+        "disk space, and frontmatter corruption. "
+        "Use this to diagnose vault issues, before running heavy operations, "
+        "or to get a full picture of vault health. "
+        "Checks include: missing required directories, unreadable files, "
+        "broken wikilinks, unreferenced pages in index, orphan pages, "
+        "low disk space, and corrupt frontmatter."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "vault_path": {
+                "type": "string",
+                "description": (
+                    "Path to the wiki vault. Defaults to MEMORY_WIKI_PATH env var, "
+                    "or /media/racoony-wiki/ if not set."
+                ),
+            },
+            "json_output": {
+                "type": "boolean",
+                "description": "Return machine-readable JSON instead of a human-readable summary.",
+            },
+        },
+    },
+}
+
+
+WIKI_INGEST = {
+    "name": "wiki_ingest",
+    "description": (
+        "Ingest raw markdown files into the wiki vault. Parses frontmatter, "
+        "extracts claims (lines matching claim-like patterns), extracts sources "
+        "(markdown links to external URLs), detects the page kind (entity/concept/source), "
+        "and writes a properly formatted wiki page. "
+        "Useful for importing scraped content, exported notes, or external documents. "
+        "Can ingest a single file or a whole directory."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "file_path": {
+                "type": "string",
+                "description": (
+                    "Path to the markdown file or directory to ingest. "
+                    "Can be absolute or relative to the current working directory."
+                ),
+            },
+            "vault_path": {
+                "type": "string",
+                "description": (
+                    "Path to the wiki vault. Defaults to MEMORY_WIKI_PATH env var, "
+                    "or /media/racoony-wiki/ if not set."
+                ),
+            },
+            "kind": {
+                "type": "string",
+                "enum": ["entity", "concept", "source", "auto"],
+                "description": (
+                    "Target page kind: 'entity', 'concept', 'source', or 'auto' "
+                    "(auto-detect from content). Default: 'auto'."
+                ),
+            },
+            "recursive": {
+                "type": "boolean",
+                "description": (
+                    "If ingesting a directory, process files in subdirectories too. "
+                    "Default: True."
+                ),
+            },
+            "force": {
+                "type": "boolean",
+                "description": (
+                    "Overwrite existing pages with the same title. "
+                    "If False (default), renames conflicting files."
+                ),
+            },
+            "namespace": {
+                "type": "string",
+                "description": (
+                    "Optional custom ID prefix, e.g. 'project-x'. "
+                    "Defaults to the kind-based prefix (entity., concept., etc.)."
+                ),
+            },
+            "json_output": {
+                "type": "boolean",
+                "description": "Return machine-readable JSON instead of a human-readable summary.",
+            },
+        },
+        "required": ["file_path"],
+    },
+}
+
+
+WIKI_APPLY = {
+    "name": "wiki_apply",
+    "description": (
+        "Apply mutations to the wiki vault in three modes: "
+        "(1) 'synthesis' regenerates synthesis pages from source entity/concept pages; "
+        "(2) 'metadata' bulk-updates frontmatter fields across pages "
+        "(e.g. set confidence=0.9 on all entity pages matching a query); "
+        "(3) 'lint-fix' auto-fixes common lint issues like missing IDs, "
+        "missing pageType, missing titles, and broken wikilinks. "
+        "All modes support dry_run=true to preview without writing. "
+        "CAUTION: lint-fix and metadata modes modify your wiki files — "
+        "always run with dry_run=true first."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "mode": {
+                "type": "string",
+                "enum": ["synthesis", "metadata", "lint-fix"],
+                "description": (
+                    "Apply mode: 'synthesis' (regenerate syntheses), "
+                    "'metadata' (bulk-update frontmatter), "
+                    "'lint-fix' (auto-fix lint issues)."
+                ),
+            },
+            "vault_path": {
+                "type": "string",
+                "description": (
+                    "Path to the wiki vault. Defaults to MEMORY_WIKI_PATH env var, "
+                    "or /media/racoony-wiki/ if not set."
+                ),
+            },
+            "dry_run": {
+                "type": "boolean",
+                "description": (
+                    "Preview the changes without writing anything. "
+                    "Always use this first to see what would happen."
+                ),
+            },
+            "target_id": {
+                "type": "string",
+                "description": (
+                    "For mode='synthesis': only regenerate this specific synthesis ID. "
+                    "If not provided, regenerates all synthesis pages."
+                ),
+            },
+            "updates": {
+                "type": "object",
+                "description": (
+                    "For mode='metadata': a dict of frontmatter key->value to set. "
+                    "Supports dot notation for nested keys (e.g. 'claims[0].status'). "
+                    "Example: {\"confidence\": 0.9, \"status\": \"reviewed\"}"
+                ),
+            },
+            "filter_kinds": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "For mode='metadata': only update pages of these kinds "
+                    "(e.g. ['entity', 'concept']). If not provided, updates all kinds."
+                ),
+            },
+            "filter_query": {
+                "type": "string",
+                "description": (
+                    "For mode='metadata': only update pages whose title contains this substring."
+                ),
+            },
+            "categories": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "For mode='lint-fix': only fix issues in these categories "
+                    "(e.g. ['structure', 'links']). If not provided, fixes all fixable issues."
+                ),
+            },
+            "json_output": {
+                "type": "boolean",
+                "description": "Return machine-readable JSON instead of a human-readable summary.",
+            },
+        },
+        "required": ["mode"],
+    },
+}
