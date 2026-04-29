@@ -324,8 +324,8 @@ def ingest_file(
         detected = _detect_kind(body, title)
         kind = detected
 
-    # Generate ID
-    id_val = _generate_id(title, kind, namespace)
+    # Use the id from input frontmatter if explicitly set, otherwise generate one
+    id_val = fm.get("id") if fm and fm.get("id") else _generate_id(title, kind, namespace)
 
     # Determine output path — pluralize kind to get directory name
     kind_plural = {"entity": "entities", "concept": "concepts",
