@@ -21,6 +21,8 @@ RELATED_START = "<!-- openclaw:wiki:related:start -->"
 RELATED_END = "<!-- openclaw:wiki:related:end -->"
 LINT_START = "<!-- openclaw:wiki:lint:start -->"
 LINT_END = "<!-- openclaw:wiki:lint:end -->"
+INDEX_START = "<!-- openclaw:wiki:index:start -->"
+INDEX_END = "<!-- openclaw:wiki:index:end -->"
 
 
 # ---------------------------------------------------------------------------

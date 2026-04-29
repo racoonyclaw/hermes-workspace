@@ -400,6 +400,11 @@ def ingest_file(
             error=f"Cannot write file: {e}",
         )
 
+    # Side effects: regenerate index + append log entry
+    _rebuild_index(vault_path, warnings)
+    _append_log(vault_path, title, id_val, str(out_path.relative_to(vault_path)),
+                fm.get("url") if fm else None, warnings)
+
     return IngestResult(
         original_path=str(src),
         wiki_path=str(out_path.relative_to(vault_path)),
@@ -441,3 +446,151 @@ def ingest_directory(
         results.append(result)
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Inline side-effect helpers (no external imports needed)
+# ---------------------------------------------------------------------------
+
+import json as _json
+
+INDEX_START_MARKER = "<!-- openclaw:wiki:index:start -->"
+INDEX_END_MARKER = "<!-- openclaw:wiki:index:end -->"
+
+
+def _rebuild_index(vault_path: Path, warnings: list) -> None:
+    """Regenerate the index.md managed block from vault contents (inline)."""
+    try:
+        kinds = {
+            "sources": "Sources", "entities": "Entities", "concepts": "Concepts",
+            "syntheses": "Syntheses", "reports": "Reports",
+        }
+        lines = []
+        total_pages = 0
+
+        # Collect pages by kind
+        by_kind = {}
+        for kind_dir_name in kinds:
+            kind_dir = vault_path / kind_dir_name
+            if not kind_dir.is_dir():
+                by_kind[kind_dir_name] = []
+                continue
+            pages = sorted(
+                [p for p in kind_dir.glob("*.md") if p.name != "index.md"],
+                key=lambda p: str(p.stem).lower(),
+            )
+            by_kind[kind_dir_name] = pages
+            total_pages += len(pages)
+
+        # Summary header
+        lines.append(f"- Render mode: `obsidian`")
+        lines.append(f"- Total pages: {total_pages}")
+        for kind_dir_name, label in kinds.items():
+            lines.append(f"- {label}: {len(by_kind[kind_dir_name])}")
+        lines.append("")
+
+        # Build per-category lists
+        for kind_dir_name, label in kinds.items():
+            pages = by_kind[kind_dir_name]
+            lines.append(f"### {label}")
+            if not pages:
+                lines.append(f"- No {kind_dir_name.lower()} yet.")
+                lines.append("")
+                continue
+
+            for page in pages:
+                rel = str(page.relative_to(vault_path))
+                link = rel.replace(".md", "")
+                title = page.stem.replace("-", " ").title()
+
+                # Read frontmatter for real title
+                try:
+                    raw = page.read_text(encoding="utf-8")
+                    fm_match = re.match(r"^---\n(.*?)\n---", raw, re.DOTALL)
+                    if fm_match:
+                        t = re.search(r'title:\s*["\']?(.+?)["\']?\s*$',
+                                       fm_match.group(1), re.MULTILINE)
+                        if t:
+                            title = t.group(1).strip()
+                except Exception:
+                    pass
+
+                # One-line summary from body
+                summary = ""
+                try:
+                    raw = page.read_text(encoding="utf-8")
+                    body_text = re.sub(r"^---\n.*?\n---\n", "", raw, flags=re.DOTALL)
+                    for line_text in body_text.splitlines():
+                        stripped = line_text.strip()
+                        if not stripped or stripped.startswith("#"):
+                            continue
+                        summary = re.sub(
+                            r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]", r"\1", stripped)
+                        if len(summary) > 120:
+                            summary = summary[:120].rsplit(" ", 1)[0] + "…"
+                        break
+                except Exception:
+                    pass
+
+                if summary:
+                    lines.append(f"- [[{link}|{title}]]")
+                    lines.append(f"  {summary}")
+                else:
+                    lines.append(f"- [[{link}|{title}]]")
+
+            lines.append("")
+
+        new_block = "\n".join(lines)
+
+        # Read and update index.md
+        index_path = vault_path / "index.md"
+        if not index_path.exists():
+            index_path.parent.mkdir(parents=True, exist_ok=True)
+            index_path.write_text(
+                "# Wiki Index\n\n## Generated\n"
+                f"{INDEX_START_MARKER}\n{new_block}\n{INDEX_END_MARKER}\n",
+                encoding="utf-8",
+            )
+            return
+
+        current = index_path.read_text(encoding="utf-8")
+        si = current.find(INDEX_START_MARKER)
+        ei = current.find(INDEX_END_MARKER)
+
+        if si != -1 and ei != -1:
+            updated = (current[:si] + INDEX_START_MARKER + "\n" +
+                       new_block + "\n" + INDEX_END_MARKER +
+                       current[ei + len(INDEX_END_MARKER):])
+        else:
+            updated = current.rstrip() + "\n\n" + new_block + "\n"
+
+        index_path.write_text(updated, encoding="utf-8")
+    except Exception as e:
+        warnings.append(f"Index regeneration failed: {e}")
+
+
+def _append_log(vault_path: Path, title: str, source_id: str,
+                wiki_path: str, source_url: str | None,
+                warnings: list) -> None:
+    """Append an ingest entry to the JSONL log file (inline)."""
+    try:
+        log_dir = vault_path / "reports"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "ingest-log.jsonl"
+
+        entry = {
+            "type": "ingest",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "details": {
+                "title": title,
+                "id": source_id,
+                "wiki_path": wiki_path,
+            },
+        }
+        if source_url:
+            entry["details"]["source_url"] = source_url
+
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(_json.dumps(entry) + "\n")
+    except Exception as e:
+        warnings.append(f"Log append failed: {e}")
